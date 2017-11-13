@@ -1,0 +1,156 @@
+#! /usr/bin/env python
+from __future__ import absolute_import
+
+import keras
+import keras.callbacks as cbks
+from keras.callbacks import TensorBoard
+from keras.models import Model
+from keras.engine.training import _make_batches
+from datetime import datetime as dt
+from tqdm import tqdm
+import argparse
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+import os, sys, random
+import importlib
+sys.path.append(os.path.dirname(os.path.pardir))
+from lib.helpers import model_builder   as model_builder
+from lib.helpers import training_helper as training_helper
+from lib.helpers import general_helper  as general_helper
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="This script is for trains the model")
+    parser.add_argument(
+        'model',
+        type=str,
+        default=None,
+        help="Training model name (default : None)"
+    )
+    parser.add_argument(
+        'dataset',
+        type=str,
+        default=None,
+        help="Name of using dataset (default : None)"
+    )
+    parser.add_argument(
+        'epochs',
+        type=int,
+        default=100,
+        help="Number of epochs (default : 100)"
+    )
+    parser.add_argument(
+        'filename',
+        type=str,
+        default=None,
+        help="Weights filename"
+    )
+    parser.add_argument(
+        '--fine_tuning',
+        action="store_true",
+        required=False,
+        help="Flag of transfer learning (default : False)"
+    )
+    parser.add_argument(
+        '--logdir',
+        type=str,
+        required=False,
+        default=None,
+        help="Path of TensorBoard logs (default : $RUNNING/logs)"
+    )
+    parser.add_argument(
+        '--num_layers',
+        type=int,
+        required=False,
+        default=0,
+        help="Num of eliminating layers (deafult : 0)"
+    )
+    parser.add_argument(
+        '-w', '--weight',
+        type=str,
+        required=False,
+        default=None,
+        help="Path to weight files (default : None)"
+    )
+    args = parser.parse_args()
+
+    if not os.path.exists("./%s"%args.logdir):
+        print("Does not exist %s. Create directory"%(args.logdir))
+        os.system("mkdir %s"%args.logdir)
+    else:
+        print("%s is already exists."%args.logdir)
+
+    if args.fine_tuning and args.weight == None:
+        raise Exception("Invalid option : if --fine-tuning is set, \
+                         you need to set --weight")
+
+    start_datetime_str = dt.now().strftime("%Y%m%d%H%M")
+    # fetch training and testing data index
+    train_index, test_index = general_helper.fetch_datalist(args.dataset)
+    mm = None
+    g  = None
+    try:
+        mm = importlib.import_module("models.%s"%args.model)
+        mm = getattr(mm, args.model)
+        mm.__init__(mm)
+        g = importlib.import_module("scripts.generators.%s"%args.dataset)
+        g = getattr(g, args.dataset)
+        g.__init__(g)
+    except:
+        from traceback import format_exc
+        print(format_exc(sys.exc_info)[2])
+
+    input_shape = g.input_shape
+    model = mm.model(self=mm, shapes=input_shape)
+    model_name = mm.model_name
+    optimizer, loss, metrics = mm.compile_options(self=mm)
+    if args.fine_tuning:
+        weights = model_builder.load_weights(model_name=model_name,
+                                             dataset_name=args.dataset)
+        model   = model_builder.apply_weights(model=model,
+                                              removal_num=args.num_layers,
+                                              weights=weights)
+        model   = model_builder.set_untrainable_layers(model=model,
+                                                       untrainable_layers=args.num_layers)
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+    model.summary()
+
+    log_dir = "./logs"
+    if args.logdir == None:
+        log_dir = "%s/%s"%(log_dir, start_datetime_str)
+        if not os.path.exists(log_dir):
+            os.system("mkdir %s"%log_dir)
+    callbacks = training_helper.activate_callbacks(log_dir=log_dir)
+    steps     = training_helper.calc_steps_per_epoch(index_list=train_index)
+    history   = model.fit_generator(
+                    generator=g.generator(self=g, index_list=train_index),
+                    steps_per_epoch=steps, epochs=args.epochs,
+                    verbose=1, callbacks=callbacks,
+                    validation_data=g.generator(self=g, index_list=test_index),
+                    validation_steps=training_helper.calc_steps_per_epoch(index_list=test_index)
+                )
+
+    # Output epoch curve
+    ec_path = training_helper.write_epoch_curve(model_name, history)
+    # Save Weights
+    last_accuracy = history.history["val_acc"][-1]
+    last_loss     = history.history["val_loss"][-1]
+    ldn = args.dataset.lower()
+    if not os.path.exists("./weights/%s"%ldn):
+        os.system("mkdir weights/%s"%ldn)
+    weights_saving_path = "./weights/%s/%s_%.3f_%.3f.h5"%(ldn, model_name,
+                                                          last_accuracy,last_loss)
+    if args.filename:
+        weights_saving_path = "%s.h5"%args.filename
+    model.save_weights(weights_saving_path)
+    if args.fine_tuning:
+        model.save_weights("./weights/master.h5")
+
+    print()
+    print("========================")
+    print("[train] - Finish training process")
+    print("[train] - Last accuracy : %s"%last_accuracy)
+    print("[train] - Last loss     : %s"%last_loss)
+    print("[trian] - Save epoch-curve in %s"%ec_path)
+    print("[train] - Save trained weights file in %s"%weights_saving_path)

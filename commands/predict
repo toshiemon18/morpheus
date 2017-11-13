@@ -1,0 +1,53 @@
+#! /usr/bin/env python
+
+import keras
+from keras.models import Model
+import numpy as np
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+from datetime import datetime as dt
+import argparse
+import os, sys
+import random
+import importlib
+sys.path.append(os.path.dirname(os.path.pardir))
+from lib.helpers import model_builder  as model_builder
+from lib.helpers import testing_helper as testing_helper
+from lib.helpers import general_helper as general_helper
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="This script test the model")
+    parser.add_argument('model',   type=str, default=None, help="Training model name")
+    parser.add_argument('dataset', type=str, default=None, help="Name of using dataset")
+    parser.add_argument('weights', type=str, default=None, help="Path of weight file(h5)")
+    args = parser.parse_args()
+
+    _, test_datalist = general_helper.fetch_datalist(args.dataset)
+    model_module = None
+    generator    = None
+    try:
+        model_module = importlib.import_module("models.%s"%args.model)
+        model_module = getattr(model_module, args.model)
+        model_module.__init__(model_module)
+        generator = importlib.import_module("scripts.generators.%s"%args.dataset)
+        generator = getattr(generator, args.dataset)
+        generator.__init__(generator)
+    except:
+        from traceback import format_exc
+        print(format_exc(sys.exc_info)[2])
+
+    input_shape = generator.input_shape
+    model = model_module.model(self=model_module, shapes=input_shape)
+    model_name = model_module.model_name
+    optimizer, loss, metrics = model_module.compile_options(self=model_module)
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+    model.load_weights(args.weights, by_name=True)
+    confusion_matrix = testing_helper.predict(model=model, index_list=test_datalist,
+                                              class_num=generator.classes,
+                                              generator=generator)
+    accuracy, _ = testing_helper.calc_accuracy(confusion_matrix=confusion_matrix)
+    print("Accuracy : %s"%accuracy)
+    labels = generator.labels(self=generator)
+    testing_helper.draw_confusion_matrix(matrix=confusion_matrix,
+                                         model_name=model_name,
+                                         labels=labels)

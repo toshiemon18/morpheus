@@ -1,0 +1,14 @@
+*.pyc
+datasets/
+.envrc
+logs/
+docs/
+.DS_Store
+._.DS_Store
+*.h5
+*.png
+*.jpg
+*.au
+*.wav
+*.npy
+results/

@@ -1,0 +1,68 @@
+#! /usr/bin/env python
+
+import argparse
+import sys, os
+import numpy
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description"Task configuration script")
+    parser.add_argument(
+        "-a", "--add",
+        type=str,
+        default=None,
+        help="Add new dataset name and generator file"
+    )
+    args = parser.parse_args()
+
+    if args.add is None and args.remove is None:
+        raise Exception("Invalid option : MOCK")
+
+    if args.add:
+        dataset_name = args.add
+        if len(dataset_name) is 0:
+            raise Exception("Invalid option : MOCK")
+        base_directory = os.path.dirname(os.pardir)
+        f = open('./scripts/generators/%s.py'%(dataset_name), 'w')
+        f.write(
+"""
+import os, sys
+import random
+import numpy as np
+import keras
+from keras.engine.traning import _make_batches
+
+class %s():
+    def __init__(self):
+        self.classes = 10
+        self.target  = np.array(np.eye(self.classes)).astype(np.float32)
+        self.input_shape = ( , , self.classes)
+
+    # generator   : データセットからデータを取り出すgeneratorを記述します
+    # ex).
+    #   def generator(self, index_list):
+    #       while True:
+    #           input_x = np.load("/path/to/data")
+    #           input_y = np.load("/path/to/target")
+    #           yield (input_x, input_y)
+    def generator(self, index_list, batch_size=os.environ["BATCH_SIZE"]):
+        while True:
+            # process...
+
+    # input_shape : データの次元数をtupleで記述してください
+    # ex).
+    #   def input_shape(self):
+    #       return (90, 90, 100)
+    def input_shape(self):
+        return (DIM1, DIM2, DIM3, )
+
+    # labels : データセットのラベルをリストの要素として列挙してください
+    # ラベルと添字の対応は作成したデータセットに合わせる必要があります
+    # ex).
+    #   def labels(self):
+    #       return ["metal", "jazz", "blues", "reggae", "hiphop", "pop", "disco", "classical", "rock", "country"]
+    def labels(self):
+        pass
+"""%dataset_name
+        )
+        f.close()
+        print("Generated file ($PROJECT/scripts/generators/%s.py)"%dataset_name)
